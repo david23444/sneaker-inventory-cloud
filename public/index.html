@@ -1,0 +1,196 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sneaker Inventory Cloud — CRUD MongoDB Atlas</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div>
+        <h1>SNEAKER INVENTORY CLOUD</h1>
+        <p class="subtitle">Gestión CRUD en tiempo real con Node.js, Express y MongoDB Atlas (<code>tienda_cloud.zapatillas</code>)</p>
+      </div>
+      <span class="badge">CLOUD LIVE</span>
+    </header>
+
+    <section class="card">
+      <h2>Registrar / Guardar Zapatilla</h2>
+      <form id="formZapatilla" class="grid-form">
+        <div class="field">
+          <label for="_id">ID Numérico *</label>
+          <input type="number" id="_id" name="_id" placeholder="Ej. 101" required />
+        </div>
+        <div class="field">
+          <label for="modelo">Modelo *</label>
+          <input type="text" id="modelo" name="modelo" placeholder="Ej. Air Jordan 1 Mid" required />
+        </div>
+        <div class="field">
+          <label for="marca">Marca *</label>
+          <input type="text" id="marca" name="marca" placeholder="Ej. Nike" required />
+        </div>
+        <div class="field">
+          <label for="talla">Talla *</label>
+          <input type="number" step="0.5" id="talla" name="talla" placeholder="Ej. 42" required />
+        </div>
+        <div class="field">
+          <label for="precio">Precio (Bs / USD) *</label>
+          <input type="number" step="0.01" id="precio" name="precio" placeholder="Ej. 650" required />
+        </div>
+        <div class="field">
+          <label for="stock">Stock *</label>
+          <input type="number" id="stock" name="stock" placeholder="Ej. 10" required />
+        </div>
+        <div class="field full">
+          <label for="etiquetas">Etiquetas (separadas por coma)</label>
+          <input type="text" id="etiquetas" name="etiquetas" placeholder="Ej. urbano, edicion limitada, retro" />
+        </div>
+        <div class="actions full">
+          <button type="submit" class="btn btn-primary">Guardar en Atlas</button>
+          <button type="reset" class="btn btn-secondary">Limpiar</button>
+        </div>
+      </form>
+      <p id="mensaje" class="mensaje" aria-live="polite"></p>
+    </section>
+
+    <section class="card">
+      <div class="toolbar">
+        <h2>Inventario Registrado</h2>
+        <div class="search-box">
+          <input type="text" id="buscarInput" placeholder="Buscar por modelo..." />
+          <button type="button" id="btnBuscar" class="btn btn-secondary">Buscar</button>
+          <button type="button" id="btnLimpiarBuscar" class="btn btn-ghost">Todos</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Modelo</th>
+              <th>Marca</th>
+              <th>Talla</th>
+              <th>Precio</th>
+              <th>Stock</th>
+              <th>Etiquetas</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tablaZapatillas">
+            <tr><td colspan="8" class="empty">Cargando inventario...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const API = '/api/zapatillas';
+    const form = document.getElementById('formZapatilla');
+    const tbody = document.getElementById('tablaZapatillas');
+    const mensaje = document.getElementById('mensaje');
+    const buscarInput = document.getElementById('buscarInput');
+
+    function mostrarMensaje(texto, esError = false) {
+      mensaje.textContent = texto;
+      mensaje.className = esError ? 'mensaje error' : 'mensaje ok';
+    }
+
+    async function cargarZapatillas(filtro = '') {
+      const url = filtro ? `${API}?buscar=${encodeURIComponent(filtro)}` : API;
+      const res = await fetch(url);
+      const datos = await res.json();
+
+      if (!Array.isArray(datos) || datos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay zapatillas registradas.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = datos.map(z => {
+        const marca = z.detalles?.marca ?? '';
+        const talla = z.detalles?.talla ?? '';
+        const tags = Array.isArray(z.etiquetas) ? z.etiquetas.join(', ') : '';
+        return `
+          <tr>
+            <td>${z._id}</td>
+            <td><strong>${z.modelo}</strong></td>
+            <td>${marca}</td>
+            <td>${talla}</td>
+            <td>${z.precio}</td>
+            <td>${z.stock}</td>
+            <td>${tags}</td>
+            <td class="ops">
+              <button class="btn btn-small btn-edit" onclick="editarZapatilla(${z._id}, ${z.precio}, ${z.stock})">Editar ($set)</button>
+              <button class="btn btn-small btn-del" onclick="eliminarZapatilla(${z._id})">Eliminar</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(form).entries());
+      const res = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        mostrarMensaje(data.error || 'Error al registrar', true);
+        return;
+      }
+      mostrarMensaje(data.mensaje || 'Registrado correctamente');
+      form.reset();
+      cargarZapatillas(buscarInput.value.trim());
+    });
+
+    async function editarZapatilla(id, precioActual, stockActual) {
+      const nuevoPrecio = prompt('Nuevo precio:', precioActual);
+      if (nuevoPrecio === null) return;
+      const nuevoStock = prompt('Nuevo stock:', stockActual);
+      if (nuevoStock === null) return;
+
+      const res = await fetch(`${API}/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ precio: nuevoPrecio, stock: nuevoStock })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        mostrarMensaje(data.error || 'Error al actualizar', true);
+        return;
+      }
+      mostrarMensaje(data.mensaje || 'Actualizado correctamente');
+      cargarZapatillas(buscarInput.value.trim());
+    }
+
+    async function eliminarZapatilla(id) {
+      if (!confirm(`¿Eliminar zapatilla con ID ${id}?`)) return;
+      const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) {
+        mostrarMensaje(data.error || 'Error al eliminar', true);
+        return;
+      }
+      mostrarMensaje(data.mensaje || 'Eliminado correctamente');
+      cargarZapatillas(buscarInput.value.trim());
+    }
+
+    document.getElementById('btnBuscar').addEventListener('click', () => {
+      cargarZapatillas(buscarInput.value.trim());
+    });
+
+    document.getElementById('btnLimpiarBuscar').addEventListener('click', () => {
+      buscarInput.value = '';
+      cargarZapatillas();
+    });
+
+    cargarZapatillas();
+  </script>
+</body>
+</html>
