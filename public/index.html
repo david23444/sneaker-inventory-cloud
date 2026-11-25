@@ -10,11 +10,22 @@
   <div class="container">
 
     <header class="header">
-      <div>
+      <div class="hero-text">
         <h1>Sneaker Inventory Cloud</h1>
-        <p class="subtitle">Inventario en tiempo real · Node.js, Express y MongoDB Atlas</p>
+        <p class="subtitle">Tu stock de zapatillas, siempre al día y en la nube.</p>
+        <span class="badge"><i class="dot"></i> Cloud live</span>
       </div>
-      <span class="badge"><i class="dot"></i> Cloud live</span>
+      <div class="hero-shoe" aria-hidden="true">
+        <svg viewBox="0 0 120 60" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="62" cy="57" rx="48" ry="2.6" fill="#000" opacity=".35"/>
+          <path d="M6 44h106q4 0 4 4v2q0 5-6 5H14q-8 0-8-6z" fill="#f1f5f9"/>
+          <path d="M8 47h108" stroke="#cbd5e1" stroke-width="1.2"/>
+          <path d="M10 44V30q0-4 4-5l16-3q6-2 10-8l6-6q4-2 8 1l4 5q6 6 18 10 20 4 32 14 4 3 4 6z" fill="var(--accent)"/>
+          <path d="M18 41q32-2 64-14" stroke="#04120b" stroke-width="3" fill="none" stroke-linecap="round" opacity=".85"/>
+          <path d="M44 14l9 6M49 10l9 7M54 8l9 7" stroke="#04120b" stroke-width="2" stroke-linecap="round" opacity=".6"/>
+          <path d="M10 36q10-1 20-5" stroke="#fff" stroke-width="1.5" fill="none" opacity=".5"/>
+        </svg>
+      </div>
     </header>
 
     <section class="stats" aria-label="Resumen del inventario">
@@ -28,8 +39,8 @@
       <form id="formZapatilla" class="grid-form" autocomplete="off">
 
         <div class="field">
-          <label for="_id">ID numérico</label>
-          <input type="number" id="_id" name="_id" placeholder="101" required />
+          <label for="_id">ID <small>(automático)</small></label>
+          <input type="number" id="_id" name="_id" readonly tabindex="-1" class="auto" />
         </div>
 
         <div class="field">
@@ -128,7 +139,7 @@
     const API = '/api/zapatillas';
 
     // ---------- Catálogo por defecto (editable) ----------
-    const CATALOGO = {
+    const BASE = {
       'Nike': ['Air Max 90', 'Air Max 97', 'Air Force 1 Low', 'Air Force 1 Mid', 'Dunk Low Panda', 'Dunk High', 'Pegasus 41', 'Vomero 5', 'Cortez', 'Blazer Mid 77'],
       'Jordan': ['Air Jordan 1 Mid', 'Air Jordan 1 High OG', 'Air Jordan 1 Low', 'Air Jordan 2 Black', 'Air Jordan 3 White Cement', 'Air Jordan 4 Retro', 'Air Jordan 5', 'Air Jordan 11 Retro', 'Air Jordan 12'],
       'Adidas': ['Samba OG', 'Gazelle', 'Campus 00s', 'Superstar', 'Stan Smith', 'Forum Low', 'Ultraboost Light', 'Handball Spezial', 'Yeezy Boost 350'],
@@ -140,6 +151,17 @@
       'Asics': ['Gel-Kayano 14', 'Gel-1130', 'Gel-Nimbus 26', 'Gel-Lyte III'],
       'Otra': []
     };
+    // Nombre completo: "New Balance 530", "Nike Air Max 90", etc.
+    const CATALOGO = Object.fromEntries(Object.entries(BASE).map(([marca, lista]) => [
+      marca,
+      lista.map(n => (marca === 'Jordan' || n.startsWith(marca)) ? n : `${marca} ${n}`)
+    ]));
+    const COLORES = { 'Nike': '#ff7a45', 'Jordan': '#ef4444', 'Adidas': '#3b82f6', 'Puma': '#eab308', 'New Balance': '#94a3b8',
+      'Converse': '#e5e7eb', 'Vans': '#a855f7', 'Reebok': '#22d3ee', 'Asics': '#35f0a0' };
+    function zapatoSVG(marca) {
+      const c = COLORES[marca] || '#64748b';
+      return `<svg viewBox="0 0 120 60" xmlns="http://www.w3.org/2000/svg"><path d="M6 44h106q4 0 4 4v2q0 5-6 5H14q-8 0-8-6z" fill="#f1f5f9"/><path d="M10 44V30q0-4 4-5l16-3q6-2 10-8l6-6q4-2 8 1l4 5q6 6 18 10 20 4 32 14 4 3 4 6z" fill="${c}"/><path d="M18 41q32-2 64-14" stroke="#0a0d12" stroke-width="3" fill="none" stroke-linecap="round" opacity=".7"/></svg>`;
+    }
     const MARCAS = Object.keys(CATALOGO);
     const ETIQUETAS = ['urbano', 'deportivo', 'running', 'básquet', 'retro', 'edición limitada', 'casual', 'skate', 'lifestyle', 'premium', 'nuevo', 'oferta'];
 
@@ -203,12 +225,12 @@
     function mostrarSugerencias() {
       const q = modeloInput.value.trim().toLowerCase();
       const marcaSel = marcaHidden.value;
-      let items = todosLosModelos().filter(it => !q || it.modelo.toLowerCase().includes(q));
+      let items = todosLosModelos().filter(it => q ? it.modelo.toLowerCase().includes(q) : (!marcaSel || it.marca === marcaSel));
       items.sort((a, b) =>
         (b.marca === marcaSel) - (a.marca === marcaSel) ||
         (b.modelo.toLowerCase().startsWith(q)) - (a.modelo.toLowerCase().startsWith(q)) ||
         a.modelo.localeCompare(b.modelo));
-      items = items.slice(0, 8);
+      items = items.slice(0, 40);
       sugActiva = -1;
       if (!items.length) { cerrarSugerencias(); return; }
       lista.innerHTML = items.map((it, i) => `
@@ -257,6 +279,12 @@
       pintarChips();
     });
 
+    // ---------- ID automático ----------
+    function setNextId() {
+      const ids = inventario.map(z => Number(z._id)).filter(Number.isFinite);
+      $('_id').value = ids.length ? Math.max(...ids) + 1 : 101;
+    }
+
     // ---------- Datos ----------
     async function cargarZapatillas() {
       try {
@@ -264,6 +292,7 @@
         const datos = await res.json();
         inventario = Array.isArray(datos) ? datos : [];
       } catch { inventario = []; toast('No se pudo conectar con el servidor', true); }
+      setNextId();
       pintarEstadisticas();
       pintarTabla();
     }
@@ -292,7 +321,7 @@
         return `
           <tr>
             <td class="muted">${esc(z._id)}</td>
-            <td><strong>${esc(z.modelo)}</strong></td>
+            <td><div class="modelo-cell"><span class="thumb">${zapatoSVG(z.detalles?.marca)}</span><strong>${esc(z.modelo)}</strong></div></td>
             <td>${esc(z.detalles?.marca)}</td>
             <td>${esc(z.detalles?.talla)}</td>
             <td>${esc(z.precio)}</td>
@@ -324,7 +353,7 @@
         cargarZapatillas();
       } catch { toast('No se pudo conectar con el servidor', true); }
     });
-    function resetFormulario() { seleccion.clear(); pintarChips(); setMarca(''); marcaSelect.selectedIndex = 0; cerrarSugerencias(); }
+    function resetFormulario() { setNextId(); seleccion.clear(); pintarChips(); setMarca(''); marcaSelect.selectedIndex = 0; cerrarSugerencias(); }
     $('btnReset').addEventListener('click', () => setTimeout(resetFormulario));
 
     // ---------- Editar / Eliminar ----------
