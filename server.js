@@ -3,7 +3,7 @@ const { MongoClient } = require('mongodb');
 const path = require('path');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '5mb' })); // las fotos viajan como base64
 app.use(express.static(path.join(__dirname, 'public')));
 
 const uri = process.env.MONGO_URI || "mongodb://admin_tienda:Admin1234@ac-d2cwgtu-shard-00-00.wdws0k8.mongodb.net:27017,ac-d2cwgtu-shard-00-01.wdws0k8.mongodb.net:27017,ac-d2cwgtu-shard-00-02.wdws0k8.mongodb.net:27017/?ssl=true&authSource=admin&retryWrites=true&w=majority";
@@ -17,9 +17,14 @@ async function iniciarCloud() {
   console.log("Conectado exitosamente a MongoDB Atlas (Cloud) -> BD: tienda_cloud");
 }
 
+// Acepta solo imágenes en base64 de hasta ~1.5 MB
+function fotoValida(foto) {
+  return typeof foto === 'string' && foto.startsWith('data:image/') && foto.length <= 1_500_000;
+}
+
 app.post('/api/zapatillas', async (req, res) => {
   try {
-    const { _id, modelo, precio, stock, marca, talla, etiquetas } = req.body;
+    const { _id, modelo, precio, stock, marca, talla, etiquetas, foto } = req.body;
     const nuevoDoc = {
       _id: Number(_id),
       modelo,
@@ -28,6 +33,10 @@ app.post('/api/zapatillas', async (req, res) => {
       detalles: { marca, talla: Number(talla) },
       etiquetas: etiquetas ? etiquetas.split(',').map(e => e.trim()).filter(Boolean) : []
     };
+    if (foto) {
+      if (!fotoValida(foto)) return res.status(400).json({ error: "La foto no es válida o pesa demasiado" });
+      nuevoDoc.foto = foto;
+    }
     const resultado = await coleccion.insertOne(nuevoDoc);
     res.json({ mensaje: "Registrado en MongoDB Atlas", resultado });
   } catch (err) {
@@ -38,7 +47,8 @@ app.post('/api/zapatillas', async (req, res) => {
 app.get('/api/zapatillas', async (req, res) => {
   try {
     const { buscar } = req.query;
-    const filtro = buscar ? { modelo: new RegExp(buscar, 'i') } : {};
+    // Se escapan los caracteres especiales para que el texto buscado no rompa el RegExp
+    const filtro = buscar ? { modelo: new RegExp(buscar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') } : {};
     const lista = await coleccion.find(filtro).sort({ _id: 1 }).toArray();
     res.json(lista);
   } catch (err) {
@@ -49,11 +59,13 @@ app.get('/api/zapatillas', async (req, res) => {
 app.put('/api/zapatillas/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { precio, stock } = req.body;
-    const resultado = await coleccion.updateOne(
-      { _id: id },
-      { $set: { precio: Number(precio), stock: Number(stock) } }
-    );
+    const { precio, stock, foto } = req.body;
+    const cambios = { precio: Number(precio), stock: Number(stock) };
+    if (foto) {
+      if (!fotoValida(foto)) return res.status(400).json({ error: "La foto no es válida o pesa demasiado" });
+      cambios.foto = foto;
+    }
+    const resultado = await coleccion.updateOne({ _id: id }, { $set: cambios });
     res.json({ mensaje: "Actualizado en MongoDB Atlas", resultado });
   } catch (err) {
     res.status(400).json({ error: err.message });
